@@ -158,8 +158,9 @@ class ProductionMongoToPostgresETL:
         self.override_tables = self.etl_config.get('override_tables', False)
         self.sync_duration = self.etl_config.get('sync_duration', 0)  # in minutes, 0 means no sync
         
-        # PostgreSQL reserved words
+        # PostgreSQL reserved words and system columns
         self.postgres_reserved_words = self._load_reserved_words()
+        self.system_columns = self._load_system_columns()
         
         # Setup signal handlers for graceful shutdown
         self._setup_signal_handlers()
@@ -177,6 +178,12 @@ class ProductionMongoToPostgresETL:
             'distinct', 'all', 'any', 'some', 'exists', 'not', 'and', 'or',
             'between', 'in', 'like', 'ilike', 'similar', 'to', 'is', 'null',
             'true', 'false', 'unknown', 'case', 'when', 'then', 'else', 'end'
+        }
+    
+    def _load_system_columns(self) -> set:
+        """Load system column names that we use in our tables"""
+        return {
+            'id', 'mongo_id', 'created_at', 'updated_at', 'last_modified'
         }
     
     def _setup_signal_handlers(self):
@@ -328,6 +335,13 @@ class ProductionMongoToPostgresETL:
             return f'field_{sanitized}'
         return sanitized
     
+    def handle_system_column_conflicts(self, field_name: str) -> str:
+        """Handle conflicts with system column names"""
+        sanitized = self.sanitize_name(field_name)
+        if sanitized in self.system_columns:
+            return f'data_{sanitized}'
+        return sanitized
+    
     def infer_postgres_type(self, value: Any) -> str:
         """Infer PostgreSQL data type"""
         if value is None:
@@ -469,14 +483,21 @@ class ProductionMongoToPostgresETL:
             columns.append("updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
             columns.append("last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         
+        # Process data fields with conflict resolution
+        processed_fields = set()
         for field, field_type in fields.items():
+            # Handle reserved keywords and system column conflicts
             sanitized_field = self.handle_reserved_keywords(field)
+            sanitized_field = self.handle_system_column_conflicts(sanitized_field)
             
-            if sanitized_field == 'id':
-                sanitized_field = 'original_id'
-            elif sanitized_field == 'mongo_id' and not parent_table:
-                sanitized_field = 'mongo_field_id'
+            # Ensure field name is unique
+            original_field = sanitized_field
+            counter = 1
+            while sanitized_field in processed_fields:
+                sanitized_field = f"{original_field}_{counter}"
+                counter += 1
             
+            processed_fields.add(sanitized_field)
             columns.append(f"{sanitized_field} {field_type}")
         
         create_query = sql.SQL("CREATE TABLE IF NOT EXISTS {} ({})").format(
@@ -517,17 +538,24 @@ class ProductionMongoToPostgresETL:
     # ========================= Data Migration =========================
     
     def build_field_mapping(self, collection_name: str, schema: Dict) -> Dict[str, str]:
-        """Build MongoDB to PostgreSQL field mapping"""
+        """Build MongoDB to PostgreSQL field mapping with conflict resolution"""
         field_map = {'_id': 'mongo_id'}
         
+        processed_fields = set(['mongo_id'])  # Track used field names
+        
         for field in schema['fields'].keys():
+            # Handle reserved keywords and system column conflicts
             pg_column = self.handle_reserved_keywords(field)
+            pg_column = self.handle_system_column_conflicts(pg_column)
             
-            if pg_column == 'id':
-                pg_column = 'original_id'
-            elif pg_column == 'mongo_id':
-                pg_column = 'mongo_field_id'
+            # Ensure field name is unique
+            original_field = pg_column
+            counter = 1
+            while pg_column in processed_fields:
+                pg_column = f"{original_field}_{counter}"
+                counter += 1
             
+            processed_fields.add(pg_column)
             field_map[field] = pg_column
         
         return field_map
@@ -573,8 +601,7 @@ class ProductionMongoToPostgresETL:
                         pg_column = field_mapping.get(key)
                         if not pg_column:
                             pg_column = self.handle_reserved_keywords(key)
-                            if pg_column == 'id':
-                                pg_column = 'original_id'
+                            pg_column = self.handle_system_column_conflicts(pg_column)
                         
                         if pg_column not in table_columns:
                             continue
@@ -637,6 +664,7 @@ class ProductionMongoToPostgresETL:
                     pg_column = field_mapping.get(key)
                     if not pg_column:
                         pg_column = self.handle_reserved_keywords(key)
+                        pg_column = self.handle_system_column_conflicts(pg_column)
                     
                     if pg_column not in table_columns or pg_column in ['id', 'mongo_id', 'created_at']:
                         continue
@@ -705,6 +733,9 @@ class ProductionMongoToPostgresETL:
             
             # Build field mapping
             field_mapping = self.build_field_mapping(collection_name, schema)
+            
+            # Log field mapping for debugging
+            self.logger.debug(f"Field mapping for {collection_name}: {field_mapping}")
             
             # Create main table
             self.create_table(collection_name, schema['fields'])
