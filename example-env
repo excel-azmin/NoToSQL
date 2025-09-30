@@ -1,0 +1,27 @@
+# MongoDB
+MONGO_HOST=202.91.42.204
+MONGO_PORT=27017
+MONGO_DB=rma-server
+MONGO_USER=rma-server
+MONGO_PASSWORD=mOngoRootPass2024
+MONGO_AUTH_DB=rma-server
+
+# PostgreSQL
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=target_database_prod4
+POSTGRES_USER=user-name
+POSTGRES_PASSWORD=strong-password
+
+# ETL Configuration
+ETL_BATCH_SIZE=1000
+ETL_SAMPLE_SIZE=100
+ETL_MAX_RETRIES=3
+ETL_RETRY_DELAY=5
+ETL_CONNECTION_TIMEOUT=30
+ETL_LOG_LEVEL=INFO
+ETL_LOG_FILE=etl_pipeline.log
+ETL_SKIP_VIEWS=true
+ETL_SKIP_SYSTEM=true
+ETL_OVERRIDE_TABLES=false  # Set to true to drop and recreate tables
+ETL_SYNC_DURATION=0      # Sync interval in minutes (0 = no sync)

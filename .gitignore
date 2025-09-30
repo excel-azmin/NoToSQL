@@ -1,0 +1,33 @@
+# Byte-code files
+*.pyc
+__pycache__/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+*.swp
+*~
+*.log
+
+# Operating System generated files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Test/development related files
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Configuration files (if they contain sensitive or local-specific data)
+config.ini
+.env
